@@ -35,78 +35,7 @@ A modern crowdfunding platform built with React and Node.js that enables creator
 
 ## System Architecture
 
-```mermaid
-flowchart TD
-    %% Styling Classes
-    classDef clientStyle fill:#e6fffa,stroke:#008080,stroke-width:2px,color:#004d40;
-    classDef apiStyle fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#14532d;
-    classDef dbStyle fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#78350f;
-    classDef extStyle fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#1e3a8a;
-    classDef ciStyle fill:#faf5ff,stroke:#9333ea,stroke-width:2px,color:#581c87;
-
-    %% Users
-    User["👤 Contributor / Backer"]
-    Creator["👤 Campaign Creator"]
-
-    %% Frontend Subgraph
-    subgraph Frontend["🖥️ Client Container (React 19 + Vite @ :5173)"]
-        UI["Landing & Discovery Page<br/>(Live MongoDB Campaigns)"]:::clientStyle
-        EventsView["Campaigns Catalog & Search<br/>(/events)"]:::clientStyle
-        ContributeView["Campaign Details & Tiers<br/>(/contribute/:id)"]:::clientStyle
-        CheckoutView["Checkout & Invoice Screen<br/>(/checkout/:id)"]:::clientStyle
-        CreatorStudio["Campaign Studio & Management<br/>(/create-event, /my-campaigns)"]:::clientStyle
-        UserDashboard["Contributions Dashboard & Stats<br/>(/my-contributions)"]:::clientStyle
-        AuthUI["Auth Views & Google Sign-In<br/>(/login, /register)"]:::clientStyle
-        UserContext["UserContext<br/>(JWT Token & Session State)"]:::clientStyle
-    end
-
-    %% Backend Subgraph
-    subgraph Backend["⚙️ Backend Container (Express.js REST API @ :5000)"]
-        Middlewares["Security & Logging Pipeline<br/>• CORS Origin Guard<br/>• Request Logger<br/>• Validation Middleware<br/>• Centralized Error Handler"]:::apiStyle
-        Passport["Passport.js & GoogleStrategy<br/>(/api/auth/google/callback)"]:::apiStyle
-        AuthRoutes["Auth API<br/>(/api/auth, /api/login, /api/register)"]:::apiStyle
-        EventRoutes["Campaign API<br/>(/api/events - CRUD, Live Pledges)"]:::apiStyle
-        ContributionRoutes["Contribution & Invoice API<br/>(/api/contributions, /stats, /invoice)"]:::apiStyle
-        HealthRoutes["Health Diagnostics<br/>(/api/health, /api/test)"]:::apiStyle
-    end
-
-    %% Storage & External Subgraph
-    subgraph Storage["🗄️ Persistence & External Services"]
-        MongoDB[("MongoDB Atlas Database<br/>• Users Collection<br/>• Events Collection<br/>• Contributions Collection")]:::dbStyle
-        GoogleOAuth["🔐 Google Identity Services<br/>(OAuth 2.0 Auth Server)"]:::extStyle
-        Cloudinary["☁️ Cloudinary Storage<br/>(Campaign Media & Photos)"]:::extStyle
-    end
-
-    %% CI/CD Subgraph
-    subgraph DevOps["🚀 CI/CD Automation"]
-        GitHubActions["GitHub Actions Pipeline<br/>• Node 20 Native Tests (24 Tests)<br/>• Vite Production Asset Build"]:::ciStyle
-    end
-
-    %% Flow Connections
-    User -->|Browse & Pledge| UI
-    User -->|Search & Filter| EventsView
-    User -->|Select Amount| ContributeView
-    User -->|Complete Pledge| CheckoutView
-    User -->|View Invoices| UserDashboard
-    Creator -->|Publish & Manage| CreatorStudio
-    Creator -->|Sign In / Register| AuthUI
-
-    UI & EventsView & ContributeView & CheckoutView & CreatorStudio & UserDashboard -->|HTTPS / JSON / JWT| Middlewares
-    AuthUI -->|OAuth Handshake| Passport
-
-    Middlewares --> AuthRoutes
-    Middlewares --> EventRoutes
-    Middlewares --> ContributionRoutes
-    Middlewares --> HealthRoutes
-    Passport --> AuthRoutes
-
-    AuthRoutes -->|Verify Token| GoogleOAuth
-    EventRoutes -->|Upload Media| Cloudinary
-    AuthRoutes & EventRoutes & ContributionRoutes -->|Mongoose Queries| MongoDB
-
-    GitHubActions -.->|Validates PR & Push| Backend
-    GitHubActions -.->|Validates Production Build| Frontend
-```
+![Sahayog Architecture](./assets/diagram.png)
 
 ## Automated Testing & CI/CD
 
