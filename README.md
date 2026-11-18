@@ -1,8 +1,8 @@
-# Sahayog - Crowdfunding Platform
+# Sahayog
 
 A modern crowdfunding platform built with React and Node.js that enables creators to launch campaigns and receive contributions from supporters.
 
-## 🚀 Features
+## Features
 
 - **Campaign Management**: Create, edit, and manage fundraising campaigns
 - **Secure Contributions**: Support campaigns with secure donation processing
@@ -11,7 +11,7 @@ A modern crowdfunding platform built with React and Node.js that enables creator
 - **Email Notifications**: Automated invoice delivery via email
 - **Responsive Design**: Beautiful UI that works on all devices
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 ### Frontend
 - **React 19** - Modern UI library
@@ -27,12 +27,104 @@ A modern crowdfunding platform built with React and Node.js that enables creator
 - **Express.js** - Web application framework
 - **MongoDB** - NoSQL database
 - **Mongoose** - MongoDB object modeling
+- **Passport.js** - Google OAuth 2.0 authentication
 - **JWT** - Authentication tokens
 - **Cloudinary** - Image upload and management
 - **Nodemailer** - Email service
 - **bcrypt** - Password hashing
 
-## 📋 Prerequisites
+## System Architecture
+
+```mermaid
+flowchart TD
+    %% Styling Classes
+    classDef clientStyle fill:#e6fffa,stroke:#008080,stroke-width:2px,color:#004d40;
+    classDef apiStyle fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#14532d;
+    classDef dbStyle fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#78350f;
+    classDef extStyle fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#1e3a8a;
+    classDef ciStyle fill:#faf5ff,stroke:#9333ea,stroke-width:2px,color:#581c87;
+
+    %% Users
+    User["👤 Contributor / Backer"]
+    Creator["👤 Campaign Creator"]
+
+    %% Frontend Subgraph
+    subgraph Frontend["🖥️ Client Container (React 19 + Vite @ :5173)"]
+        UI["Landing & Discovery Page<br/>(Live MongoDB Campaigns)"]:::clientStyle
+        EventsView["Campaigns Catalog & Search<br/>(/events)"]:::clientStyle
+        ContributeView["Campaign Details & Tiers<br/>(/contribute/:id)"]:::clientStyle
+        CheckoutView["Checkout & Invoice Screen<br/>(/checkout/:id)"]:::clientStyle
+        CreatorStudio["Campaign Studio & Management<br/>(/create-event, /my-campaigns)"]:::clientStyle
+        UserDashboard["Contributions Dashboard & Stats<br/>(/my-contributions)"]:::clientStyle
+        AuthUI["Auth Views & Google Sign-In<br/>(/login, /register)"]:::clientStyle
+        UserContext["UserContext<br/>(JWT Token & Session State)"]:::clientStyle
+    end
+
+    %% Backend Subgraph
+    subgraph Backend["⚙️ Backend Container (Express.js REST API @ :5000)"]
+        Middlewares["Security & Logging Pipeline<br/>• CORS Origin Guard<br/>• Request Logger<br/>• Validation Middleware<br/>• Centralized Error Handler"]:::apiStyle
+        Passport["Passport.js & GoogleStrategy<br/>(/api/auth/google/callback)"]:::apiStyle
+        AuthRoutes["Auth API<br/>(/api/auth, /api/login, /api/register)"]:::apiStyle
+        EventRoutes["Campaign API<br/>(/api/events - CRUD, Live Pledges)"]:::apiStyle
+        ContributionRoutes["Contribution & Invoice API<br/>(/api/contributions, /stats, /invoice)"]:::apiStyle
+        HealthRoutes["Health Diagnostics<br/>(/api/health, /api/test)"]:::apiStyle
+    end
+
+    %% Storage & External Subgraph
+    subgraph Storage["🗄️ Persistence & External Services"]
+        MongoDB[("MongoDB Atlas Database<br/>• Users Collection<br/>• Events Collection<br/>• Contributions Collection")]:::dbStyle
+        GoogleOAuth["🔐 Google Identity Services<br/>(OAuth 2.0 Auth Server)"]:::extStyle
+        Cloudinary["☁️ Cloudinary Storage<br/>(Campaign Media & Photos)"]:::extStyle
+    end
+
+    %% CI/CD Subgraph
+    subgraph DevOps["🚀 CI/CD Automation"]
+        GitHubActions["GitHub Actions Pipeline<br/>• Node 20 Native Tests (24 Tests)<br/>• Vite Production Asset Build"]:::ciStyle
+    end
+
+    %% Flow Connections
+    User -->|Browse & Pledge| UI
+    User -->|Search & Filter| EventsView
+    User -->|Select Amount| ContributeView
+    User -->|Complete Pledge| CheckoutView
+    User -->|View Invoices| UserDashboard
+    Creator -->|Publish & Manage| CreatorStudio
+    Creator -->|Sign In / Register| AuthUI
+
+    UI & EventsView & ContributeView & CheckoutView & CreatorStudio & UserDashboard -->|HTTPS / JSON / JWT| Middlewares
+    AuthUI -->|OAuth Handshake| Passport
+
+    Middlewares --> AuthRoutes
+    Middlewares --> EventRoutes
+    Middlewares --> ContributionRoutes
+    Middlewares --> HealthRoutes
+    Passport --> AuthRoutes
+
+    AuthRoutes -->|Verify Token| GoogleOAuth
+    EventRoutes -->|Upload Media| Cloudinary
+    AuthRoutes & EventRoutes & ContributionRoutes -->|Mongoose Queries| MongoDB
+
+    GitHubActions -.->|Validates PR & Push| Backend
+    GitHubActions -.->|Validates Production Build| Frontend
+```
+
+## Automated Testing & CI/CD
+
+Sahayog includes a native Node.js test suite with zero external test runner overhead:
+
+```bash
+cd api
+npm test
+```
+
+- **Authentication Suite**: bcrypt hashing, JWT claim verification, token tamper detection.
+- **Business Logic Suite**: Real-time progress capping (100%), sequential invoice generation (`INV-<timestamp>-<padded sequence>`), pledge tier parsing.
+- **Security & Authorization Suite**: 401 unauthenticated guardrails on mutations, MongoDB ObjectId validation.
+- **Request Validation Suite**: Schema guards on `/api/register`, `/api/login`, `/api/auth/google`.
+- **Infrastructure Suite**: Diagnostics on `/api/health` and `/api/test`.
+- **GitHub Actions**: Configured at `.github/workflows/ci.yml` running all 24 automated tests on push and pull requests.
+
+## Prerequisites
 
 Before running this project, make sure you have:
 
@@ -45,7 +137,7 @@ Before running this project, make sure you have:
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/killjoycircuit/sahayog.git
+git clone https://github.com/rutujdhawale/sahayog.git
 cd sahayog
 ```
 
@@ -105,7 +197,7 @@ The application will be available at:
 - **Frontend**: http://localhost:5173
 - **Backend API**: http://localhost:5000
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 sahayog/
@@ -155,7 +247,7 @@ sahayog/
 └── README.md                     # This file
 ```
 
-## 🔑 Key Features Explained
+## Key Features
 
 ### Campaign Creation
 Users can create fundraising campaigns with:
@@ -173,9 +265,9 @@ Users can create fundraising campaigns with:
 ### User Dashboard
 - **My Campaigns**: Manage created campaigns
 - **My Contributions**: Track donation history
-- **Settings**: Update profile information
+- **Settings**: Profile information
 
-## 🎨 UI/UX Features
+## UI/UX Features
 
 - **Responsive Design**: Works seamlessly on desktop, tablet, and mobile
 - **Modern Aesthetics**: Clean, professional interface with Tailwind CSS
@@ -183,7 +275,7 @@ Users can create fundraising campaigns with:
 - **Accessibility**: ARIA labels and keyboard navigation support
 - **Toast Notifications**: Real-time feedback for user actions
 
-## 🔐 Security Features
+## Security Features
 
 - **JWT Authentication**: Secure token-based authentication
 - **Password Hashing**: bcrypt for secure password storage
@@ -191,14 +283,7 @@ Users can create fundraising campaigns with:
 - **CORS Protection**: Configured for secure cross-origin requests
 - **File Upload Security**: Cloudinary integration with file type validation
 
-## 📧 Email Integration
-
-The platform includes automated email functionality:
-- **Invoice Delivery**: Automatic invoice emails after contributions
-- **Campaign Updates**: Notifications for campaign milestones
-- **Welcome Emails**: User registration confirmations
-
-## 🚀 Deployment
+## Deployment
 
 ### Environment Variables for Production
 ```env
@@ -225,15 +310,7 @@ cd ../api
 npm start
 ```
 
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📝 API Documentation
+## API Docs
 
 ### Authentication Endpoints
 - `POST /api/register` - User registration
@@ -255,7 +332,7 @@ npm start
 - `GET /api/contributions/:id/invoice` - Get contribution invoice
 - `POST /api/contributions/:id/email-invoice` - Email invoice
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
@@ -276,23 +353,7 @@ npm start
 - Clear node_modules and reinstall dependencies
 - Check for version conflicts in package.json
 
-## 📄 License
+## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT
 
-## 👨‍💻 Author
-
-**Killjoycircuit**
-- GitHub: [@killjoycircuit](https://github.com/killjoycircuit)
-- LinkedIn: [Your LinkedIn Profile](https://linkedin.com/in/your-profile)
-
-## 🙏 Acknowledgments
-
-- React team for the amazing framework
-- Tailwind CSS for the utility-first approach
-- MongoDB team for the flexible database
-- All contributors and supporters of this project
-
----
-
-**Happy Crowdfunding! 🎉**
