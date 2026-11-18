@@ -5,26 +5,30 @@ const {
   getUserContributions,
   getContributionInvoice,
   emailInvoice,
-  getContributionStats
+  getContributionStats,
 } = require('../controllers/contribution.controller');
 const { authenticateToken } = require('../middlewares/auth.middleware');
+const {
+  validateContribution,
+  validateObjectIdParam,
+} = require('../middlewares/validation.middleware');
 
-// All contribution routes require authentication
-router.use(authenticateToken);
+// Protect all /contributions routes with authentication
+router.use('/contributions', authenticateToken);
 
 // POST /api/contributions - Create new contribution
-router.post('/contributions', createContribution);
+router.post('/contributions', validateContribution, createContribution);
 
 // GET /api/contributions/user/:userId - Get user contributions
-router.get('/contributions/user/:userId', getUserContributions);
+router.get('/contributions/user/:userId', validateObjectIdParam('userId'), getUserContributions);
 
 // GET /api/contributions/stats/:userId - Get contribution statistics
-router.get('/contributions/stats/:userId', getContributionStats);
+router.get('/contributions/stats/:userId', validateObjectIdParam('userId'), getContributionStats);
 
-// GET /api/contributions/:id/invoice - Get contribution invoice (generated on-demand)
-router.get('/contributions/:id/invoice', getContributionInvoice);
+// GET /api/contributions/:id/invoice - Get contribution invoice
+router.get('/contributions/:id/invoice', validateObjectIdParam('id'), getContributionInvoice);
 
 // POST /api/contributions/:id/email-invoice - Email invoice
-router.post('/contributions/:id/email-invoice', emailInvoice);
+router.post('/contributions/:id/email-invoice', validateObjectIdParam('id'), emailInvoice);
 
 module.exports = router;

@@ -111,50 +111,7 @@ const Footer = () => {
                   About Us
                 </Link>
               </li>
-              <li>
-                <a
-                  href="mailto:support@sahayog.com"
-                  className="hover:text-white transition-colors flex items-center"
-                >
-                  Contact Us
-                  <Mail className="h-3 w-3 ml-1 opacity-50" />
-                </a>
-              </li>
-              <li>
-                <Link
-                  to="/privacy-policy"
-                  className="hover:text-white transition-colors"
-                >
-                  Privacy Policy
-                </Link>
-              </li>
-              <li>
-                <Link
-                  to="/terms"
-                  className="hover:text-white transition-colors"
-                >
-                  Terms of Service
-                </Link>
-              </li>
             </ul>
-          </div>
-        </div>
-
-        {/* Stats Section */}
-        <div className="mt-12 pt-8 border-t border-gray-800">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-center">
-            <div>
-              <div className="text-2xl font-bold text-teal-400">1000+</div>
-              <div className="text-sm text-gray-400">Campaigns Funded</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-teal-400">₹50L+</div>
-              <div className="text-sm text-gray-400">Total Raised</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-teal-400">5000+</div>
-              <div className="text-sm text-gray-400">Happy Contributors</div>
-            </div>
           </div>
         </div>
 
@@ -170,12 +127,6 @@ const Footer = () => {
             </p>
           </div>
 
-          <div className="flex items-center space-x-4 mt-4 sm:mt-0">
-            <div className="flex items-center space-x-2 text-xs text-gray-500">
-              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-              <span>All systems operational</span>
-            </div>
-          </div>
         </div>
       </div>
     </footer>

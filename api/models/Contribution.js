@@ -67,6 +67,5 @@ contributionSchema.pre('save', async function(next) {
 // Index for better query performance
 contributionSchema.index({ userId: 1, contributionDate: -1 });
 contributionSchema.index({ eventId: 1, contributionDate: -1 });
-contributionSchema.index({ invoiceNumber: 1 });
 
 module.exports = mongoose.model('Contribution', contributionSchema);

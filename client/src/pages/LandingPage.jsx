@@ -1,5 +1,6 @@
-import React from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import axios from "axios";
 import {
   ChevronRight,
   Users,
@@ -16,7 +17,7 @@ const LandingPage = () => {
       icon: Target,
       title: "Create Your Campaign",
       description:
-        "Share your project, set your funding goal, and create compelling rewards for backers.",
+        "Share your project, set your funding goal, and create compelling stories for backers.",
     },
     {
       icon: Users,
@@ -32,6 +33,8 @@ const LandingPage = () => {
     },
   ];
 
+  const heroCampaign = featuredCampaigns.length > 0 ? featuredCampaigns[0] : null;
+
   return (
     <div className="min-h-screen bg-white text-gray-800">
       {/* ## 1. Hero Section */}
@@ -44,9 +47,9 @@ const LandingPage = () => {
                 Fund the <span className="text-yellow-400">Future</span>,
                 Together.
               </h1>
-              <p className="text-lg text-teal-100 mb-8 max-w-lg">
-                Turn your innovative ideas into reality. Join thousands of
-                creators and backers making dreams come true on Sahayog.
+              <p className="text-lg text-teal-100 mb-8 max-w-lg leading-relaxed">
+                Turn your innovative ideas into reality. Connect directly with
+                supporters who believe in your vision and make an impact with Sahayog.
               </p>
               <div className="flex flex-col sm:flex-row gap-4">
                 <button
@@ -54,6 +57,12 @@ const LandingPage = () => {
                   className="bg-white text-[#008080] px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition transform hover:scale-105 flex items-center justify-center shadow-lg"
                 >
                   Start Your Campaign <ChevronRight className="ml-2 h-5 w-5" />
+                </button>
+                <button
+                  onClick={() => navigate("/events")}
+                  className="border-2 border-white text-white px-6 py-3 rounded-lg font-semibold hover:bg-white hover:text-[#008080] transition flex items-center justify-center"
+                >
+                  Explore Campaigns
                 </button>
               </div>
             </div>
@@ -126,8 +135,8 @@ const LandingPage = () => {
                 payments
               </li>
               <li className="flex items-center">
-                <CheckCircle className="h-5 w-5 mr-2 text-teal-400" /> Global
-                reach
+                <CheckCircle className="h-5 w-5 mr-2 text-teal-400" /> Direct
+                community support
               </li>
             </ul>
 

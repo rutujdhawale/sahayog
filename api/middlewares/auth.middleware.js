@@ -1,23 +1,35 @@
 // middlewares/auth.middleware.js
-
 const jwt = require('jsonwebtoken');
-const jwtSecret = process.env.JWT_SECRET;
+const { UnauthorizedError } = require('../utils/errors');
 
 const authenticateToken = (req, res, next) => {
-    const { token } = req.cookies;
+  // Check for token in cookie first, then in Authorization header
+  let token = req.cookies?.token;
 
-    if (!token) {
-        return res.status(401).json({ error: 'Access denied. No token provided.' });
+  if (!token && req.headers?.authorization) {
+    const authHeader = req.headers.authorization;
+    if (authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7).trim();
     }
+  }
 
-    jwt.verify(token, jwtSecret, {}, (err, userData) => {
-        if (err) {
-            return res.status(403).json({ error: 'Invalid token.' });
-        }
-        // Attach user payload to the request object
-        req.user = userData; 
-        next(); // Proceed to the next middleware or route handler
-    });
+  if (!token) {
+    return next(new UnauthorizedError('Access denied. No authentication token provided.'));
+  }
+
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    return next(new Error('JWT_SECRET is not configured on the server.'));
+  }
+
+  jwt.verify(token, jwtSecret, {}, (err, userData) => {
+    if (err) {
+      return next(new UnauthorizedError('Invalid or expired authentication token.'));
+    }
+    // Attach standard user payload to request
+    req.user = userData;
+    next();
+  });
 };
 
 module.exports = { authenticateToken };

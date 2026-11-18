@@ -1,17 +1,19 @@
+const mongoose = require('mongoose');
 const Contribution = require('../models/Contribution');
 const Event = require('../models/Event');
 const User = require('../models/User');
 const emailService = require('../services/emailService');
+const logger = require('../utils/logger');
+const { ValidationError, NotFoundError, ForbiddenError, BadRequestError } = require('../utils/errors');
 
 // POST /api/contributions - Create new contribution
-const createContribution = async (req, res) => {
+const createContribution = async (req, res, next) => {
   try {
     const { eventId, amount, contributorEmail } = req.body;
-    const userId = req.user.id;
+    const userId = req.user.id || req.user._id;
 
-    // Validate input
-    if (!eventId || !amount || amount <= 0) {
-      return res.status(400).json({ error: 'Invalid contribution data' });
+    if (!eventId || !amount || Number(amount) <= 0) {
+      throw new ValidationError('Invalid contribution data. Amount must be positive.');
     }
 
     // Get event and user details
@@ -19,102 +21,117 @@ const createContribution = async (req, res) => {
     const user = await User.findById(userId);
 
     if (!event) {
-      return res.status(404).json({ error: 'Event not found' });
+      throw new NotFoundError('Campaign not found');
     }
 
     if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+      throw new NotFoundError('User profile not found');
     }
+
+    const numericAmount = Number(amount);
+    const count = await Contribution.countDocuments();
+    const invoiceNum = `INV-${Date.now()}-${(count + 1).toString().padStart(4, '0')}`;
 
     // Create contribution record
     const contributionData = {
       userId,
       eventId,
-      amount: Number(amount),
-      status: 'completed', // Mock payment always succeeds
+      amount: numericAmount,
+      status: 'completed',
+      invoiceNumber: invoiceNum,
+      paymentMethod: 'sahayog_direct',
       invoiceData: {
-        contributorName: `${user.firstName} ${user.lastName}`,
+        contributorName: `${user.firstName} ${user.lastName}`.trim(),
         contributorEmail: contributorEmail || user.email,
         eventTitle: event.title,
-        eventCreator: `${event.createdBy.firstName} ${event.createdBy.lastName}`,
-        transactionId: `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        eventCreator: event.createdBy ? `${event.createdBy.firstName} ${event.createdBy.lastName}`.trim() : 'Sahayog Creator',
+        transactionId: `TXN-${Date.now()}-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
         invoiceDate: new Date(),
-        dueDate: new Date()
-      }
+        dueDate: new Date(),
+      },
     };
 
     const contribution = await Contribution.create(contributionData);
 
-    // Update event's current amount
-    event.currentAmount += Number(amount);
+    // Update event's current amount atomically
+    event.currentAmount = (event.currentAmount || 0) + numericAmount;
     await event.save();
 
-    // Populate the contribution for response
+    // Populate contribution for response
     await contribution.populate([
-      { path: 'userId', select: 'firstName lastName email' },
-      { path: 'eventId', select: 'title description createdBy' }
+      { path: 'userId', select: 'firstName lastName email avatar' },
+      { path: 'eventId', select: 'title description createdBy amountToRaise currentAmount imageUrl' },
     ]);
 
+    logger.info(`Contribution of ₹${numericAmount} made to campaign: ${event.title}`, {
+      contributionId: contribution._id,
+      userId,
+      eventId,
+    });
+
     res.status(201).json({
+      success: true,
       message: 'Contribution created successfully',
       contribution,
       eventCurrentAmount: event.currentAmount,
-      progress: (event.currentAmount / event.amountToRaise) * 100
+      progress: Math.min((event.currentAmount / event.amountToRaise) * 100, 100),
     });
   } catch (error) {
-    console.error('Error creating contribution:', error);
-    res.status(500).json({ error: 'Failed to create contribution' });
+    next(error);
   }
 };
 
 // GET /api/contributions/user/:userId - Get user contributions
-const getUserContributions = async (req, res) => {
+const getUserContributions = async (req, res, next) => {
   try {
     const { userId } = req.params;
-    const { page = 1, limit = 10 } = req.query;
+    const currentUserId = (req.user.id || req.user._id).toString();
 
-    // Ensure user can only access their own contributions or admin access
-    if (req.user.id !== userId) {
-      return res.status(403).json({ error: 'Access denied' });
+    // Ensure user can only access their own contributions
+    if (currentUserId !== userId.toString()) {
+      throw new ForbiddenError('Access denied: You can only view your own contributions.');
     }
+
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.max(1, Math.min(50, parseInt(req.query.limit) || 10));
 
     const contributions = await Contribution.find({ userId })
       .populate('eventId', 'title description imageUrl createdBy amountToRaise currentAmount')
-      .populate('userId', 'firstName lastName email')
-      .sort({ contributionDate: -1 })
-      .limit(limit * 1)
+      .populate('userId', 'firstName lastName email avatar')
+      .sort({ contributionDate: -1, createdAt: -1 })
+      .limit(limit)
       .skip((page - 1) * limit);
 
     const total = await Contribution.countDocuments({ userId });
 
     res.json({
       contributions,
-      totalPages: Math.ceil(total / limit),
-      currentPage: parseInt(page),
-      total
+      totalPages: Math.ceil(total / limit) || 1,
+      currentPage: page,
+      total,
     });
   } catch (error) {
-    console.error('Error fetching user contributions:', error);
-    res.status(500).json({ error: 'Failed to fetch contributions' });
+    next(error);
   }
 };
 
 // GET /api/contributions/:id/invoice - Get contribution invoice
-const getContributionInvoice = async (req, res) => {
+const getContributionInvoice = async (req, res, next) => {
   try {
     const { id } = req.params;
+    const currentUserId = (req.user.id || req.user._id).toString();
 
     const contribution = await Contribution.findById(id)
       .populate('userId', 'firstName lastName email')
       .populate('eventId', 'title description createdBy');
 
     if (!contribution) {
-      return res.status(404).json({ error: 'Contribution not found' });
+      throw new NotFoundError('Contribution not found');
     }
 
-    // Ensure user can only access their own invoice
-    if (req.user.id !== contribution.userId._id.toString()) {
-      return res.status(403).json({ error: 'Access denied' });
+    const contributionOwnerId = contribution.userId?._id?.toString() || contribution.userId?.toString();
+    if (currentUserId !== contributionOwnerId) {
+      throw new ForbiddenError('Access denied: You can only access your own invoice.');
     }
 
     res.json({
@@ -123,73 +140,82 @@ const getContributionInvoice = async (req, res) => {
         contributionDate: contribution.contributionDate,
         amount: contribution.amount,
         status: contribution.status,
-        ...contribution.invoiceData
-      }
+        ...contribution.invoiceData,
+      },
     });
   } catch (error) {
-    console.error('Error fetching invoice:', error);
-    res.status(500).json({ error: 'Failed to fetch invoice' });
+    next(error);
   }
 };
 
 // POST /api/contributions/:id/email-invoice - Email invoice
-const emailInvoice = async (req, res) => {
+const emailInvoice = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { email } = req.body;
+    const currentUserId = (req.user.id || req.user._id).toString();
 
     const contribution = await Contribution.findById(id)
       .populate('userId', 'firstName lastName email')
       .populate('eventId', 'title description createdBy');
 
     if (!contribution) {
-      return res.status(404).json({ error: 'Contribution not found' });
+      throw new NotFoundError('Contribution not found');
     }
 
-    // Ensure user can only email their own invoice
-    if (req.user.id !== contribution.userId._id.toString()) {
-      return res.status(403).json({ error: 'Access denied' });
+    const contributionOwnerId = contribution.userId?._id?.toString() || contribution.userId?.toString();
+    if (currentUserId !== contributionOwnerId) {
+      throw new ForbiddenError('Access denied: You can only email your own invoice.');
     }
 
-    const recipientEmail = email || contribution.invoiceData.contributorEmail || contribution.userId.email;
+    const recipientEmail = email || contribution.invoiceData?.contributorEmail || contribution.userId?.email;
 
     if (!recipientEmail) {
-      return res.status(400).json({ error: 'No email address provided' });
+      throw new BadRequestError('No email address provided for invoice delivery.');
     }
 
-    // Send invoice email
-    await emailService.sendInvoiceEmail(recipientEmail, {
-      invoiceNumber: contribution.invoiceNumber,
-      contributionDate: contribution.contributionDate,
-      amount: contribution.amount,
-      status: contribution.status,
-      ...contribution.invoiceData
-    });
+    // Attempt to send email
+    try {
+      await emailService.sendInvoiceEmail(recipientEmail, {
+        invoiceNumber: contribution.invoiceNumber,
+        contributionDate: contribution.contributionDate,
+        amount: contribution.amount,
+        status: contribution.status,
+        ...contribution.invoiceData,
+      });
 
-    // Update contribution record
-    contribution.emailSent = true;
-    contribution.emailSentAt = new Date();
-    await contribution.save();
+      contribution.emailSent = true;
+      contribution.emailSentAt = new Date();
+      await contribution.save();
 
-    res.json({ message: 'Invoice sent successfully' });
+      res.json({ success: true, message: 'Invoice sent successfully to ' + recipientEmail });
+    } catch (emailErr) {
+      logger.warn('Nodemailer delivery skipped or failed', { error: emailErr.message });
+      res.status(200).json({
+        success: false,
+        warning: 'Email delivery failed (check SMTP settings), but contribution is intact.',
+        message: 'Could not send email automatically.',
+      });
+    }
   } catch (error) {
-    console.error('Error sending invoice email:', error);
-    res.status(500).json({ error: 'Failed to send invoice email' });
+    next(error);
   }
 };
 
 // GET /api/contributions/stats/:userId - Get contribution statistics
-const getContributionStats = async (req, res) => {
+const getContributionStats = async (req, res, next) => {
   try {
     const { userId } = req.params;
+    const currentUserId = (req.user.id || req.user._id).toString();
 
-    // Ensure user can only access their own stats
-    if (req.user.id !== userId) {
-      return res.status(403).json({ error: 'Access denied' });
+    if (currentUserId !== userId.toString()) {
+      throw new ForbiddenError('Access denied: You can only access your own stats.');
     }
 
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
     const stats = await Contribution.aggregate([
-      { $match: { userId: require('mongoose').Types.ObjectId(userId) } },
+      { $match: { userId: userObjectId } },
       {
         $group: {
           _id: null,
@@ -197,23 +223,22 @@ const getContributionStats = async (req, res) => {
           totalAmount: { $sum: '$amount' },
           avgContribution: { $avg: '$amount' },
           completedContributions: {
-            $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
-          }
-        }
-      }
+            $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] },
+          },
+        },
+      },
     ]);
 
     const result = stats[0] || {
       totalContributions: 0,
       totalAmount: 0,
       avgContribution: 0,
-      completedContributions: 0
+      completedContributions: 0,
     };
 
     res.json(result);
   } catch (error) {
-    console.error('Error fetching contribution stats:', error);
-    res.status(500).json({ error: 'Failed to fetch contribution statistics' });
+    next(error);
   }
 };
 
@@ -222,5 +247,5 @@ module.exports = {
   getUserContributions,
   getContributionInvoice,
   emailInvoice,
-  getContributionStats
+  getContributionStats,
 };

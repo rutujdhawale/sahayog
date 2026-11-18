@@ -17,7 +17,8 @@ import {
 } from 'lucide-react';
 
 const ContributionPage = () => {
-  const { eventId } = useParams();
+  const { eventId: paramEventId, id } = useParams();
+  const eventId = paramEventId || id;
   const navigate = useNavigate();
   const { user } = useContext(UserContext);
   
@@ -245,7 +246,10 @@ const ContributionPage = () => {
             <div className="flex items-center space-x-4 text-sm text-gray-600">
               <div className="flex items-center">
                 <Users className="h-4 w-4 mr-1" />
-                <span>{Math.floor(Math.random() * 150) + 50} supporters</span>
+                <span>
+                  {event.supportersCount || 0}{" "}
+                  {event.supportersCount === 1 ? "supporter" : "supporters"}
+                </span>
               </div>
               <div className="flex items-center">
                 <TrendingUp className="h-4 w-4 mr-1" />

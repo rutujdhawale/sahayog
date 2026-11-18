@@ -9,7 +9,11 @@ export function UserContextProvider({ children }) {
   useEffect(() => {
     if (!user) {
       axios.get('/api/profile').then(({ data }) => {
-        setUser(data);
+        if (data) {
+          setUser({ ...data, id: data.id || data._id, _id: data._id || data.id });
+        } else {
+          setUser(null);
+        }
       }).catch(err => {
         // This catch block handles the 401 error gracefully
         // when a user is not logged in.
@@ -18,7 +22,7 @@ export function UserContextProvider({ children }) {
         setReady(true);
       });
     } else {
-        setReady(true);
+      setReady(true);
     }
   }, []);
 

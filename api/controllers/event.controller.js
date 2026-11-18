@@ -1,210 +1,247 @@
 // controllers/event.controller.js
-
 const Event = require("../models/Event.js");
+const Contribution = require("../models/Contribution.js");
 const cloudinary = require("../config/cloudinary.js");
 const fs = require("fs");
+const logger = require("../utils/logger");
+const {
+  ValidationError,
+  NotFoundError,
+  ForbiddenError,
+  BadRequestError,
+} = require("../utils/errors");
 
-// POST /events
-const createEvent = async (req, res) => {
+// Helper to remove temporary uploaded file
+const cleanupTempFile = (filePath) => {
+  if (filePath && fs.existsSync(filePath)) {
+    try {
+      fs.unlinkSync(filePath);
+    } catch (err) {
+      logger.warn("Failed to delete temp file:", { path: filePath, error: err.message });
+    }
+  }
+};
+
+// POST /api/events
+const createEvent = async (req, res, next) => {
   try {
     const { title, description, amountToRaise, imageUrl } = req.body;
-    const tags = req.body.tags ? JSON.parse(req.body.tags) : [];
+    let tags = [];
 
+    if (req.body.tags) {
+      if (Array.isArray(req.body.tags)) {
+        tags = req.body.tags;
+      } else if (typeof req.body.tags === "string") {
+        try {
+          tags = JSON.parse(req.body.tags);
+        } catch {
+          tags = req.body.tags.split(",").map((t) => t.trim()).filter(Boolean);
+        }
+      }
+    }
+
+    const userId = req.user.id || req.user._id;
     const eventData = {
       title,
       description,
-      amountToRaise,
+      amountToRaise: Number(amountToRaise),
       tags,
-      createdBy: req.user.id,
+      createdBy: userId,
     };
 
-    // Handle image upload
+    // Handle image file upload to Cloudinary if provided
     if (req.file) {
       try {
-        // Upload to Cloudinary
         const result = await cloudinary.uploader.upload(req.file.path, {
           folder: "sahayog-events",
           resource_type: "image",
           transformation: [
-            { width: 800, height: 600, crop: "limit" },
+            { width: 1200, height: 800, crop: "limit" },
             { quality: "auto", fetch_format: "auto" },
           ],
         });
 
         eventData.imageUrl = result.secure_url;
         eventData.imagePublicId = result.public_id;
-
-        // Clean up temporary file
-        fs.unlinkSync(req.file.path);
+        cleanupTempFile(req.file.path);
       } catch (uploadError) {
-        console.error("Cloudinary upload failed:", uploadError);
-        // Clean up temporary file even if upload fails
-        if (req.file && req.file.path) {
-          try {
-            fs.unlinkSync(req.file.path);
-          } catch (cleanupError) {
-            console.error("Failed to clean up temp file:", cleanupError);
-          }
-        }
-        return res
-          .status(422)
-          .json({ error: "Image upload failed. Please try again." });
+        cleanupTempFile(req.file.path);
+        logger.error("Cloudinary upload failed:", { error: uploadError.message });
+        throw new ValidationError("Image upload failed. Please try again or provide a direct image URL.");
       }
     } else if (imageUrl) {
-      // Use provided image URL
       eventData.imageUrl = imageUrl;
     }
 
     const eventDoc = await Event.create(eventData);
     await eventDoc.populate("createdBy", "firstName lastName email avatar");
+
+    logger.info(`Campaign created: "${title}" by user ${userId}`);
     res.status(201).json(eventDoc);
   } catch (e) {
-    console.error("EVENT CREATION FAILED:", e);
+    if (req.file) cleanupTempFile(req.file.path);
+    next(e);
+  }
+};
 
-    // Clean up temporary file if it exists
-    if (req.file && req.file.path) {
-      try {
-        fs.unlinkSync(req.file.path);
-      } catch (cleanupError) {
-        console.error("Failed to clean up temp file:", cleanupError);
+// GET /api/events
+const getAllEvents = async (req, res, next) => {
+  try {
+    const { page = 1, limit = 9, tags, search, isActive = true, sort = "newest" } = req.query;
+    const query = { isActive: isActive === "true" || isActive === true };
+
+    // Tag filtering
+    if (tags && tags.trim()) {
+      const tagList = tags.split(",").map((t) => t.trim()).filter(Boolean);
+      if (tagList.length > 0) {
+        query.tags = { $in: tagList };
       }
     }
 
-    // Provide specific feedback for Mongoose validation errors
-    if (e.name === "ValidationError") {
-      const messages = Object.values(e.errors).map((val) => val.message);
-      return res
-        .status(422)
-        .json({ error: `Validation Error: ${messages.join(", ")}` });
-    }
-    // Handle bad JSON in the 'tags' field
-    if (e instanceof SyntaxError) {
-      return res.status(422).json({ error: "Invalid format for tags." });
+    // Text search by title or description
+    if (search && search.trim()) {
+      const escapedSearch = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.$or = [
+        { title: { $regex: escapedSearch, $options: "i" } },
+        { description: { $regex: escapedSearch, $options: "i" } },
+        { tags: { $regex: escapedSearch, $options: "i" } },
+      ];
     }
 
-    res.status(422).json({ error: e.message });
-  }
-};
-
-// ... (the rest of the controller functions remain the same)
-
-// GET /events
-const getAllEvents = async (req, res) => {
-  try {
-    const { page = 1, limit = 10, tags, isActive = true } = req.query;
-    const query = { isActive: isActive === "true" };
-    if (tags) {
-      query.tags = { $in: tags.split(",") };
+    // Sorting
+    let sortOptions = { createdAt: -1 };
+    if (sort === "most-funded") {
+      sortOptions = { currentAmount: -1 };
+    } else if (sort === "target-high") {
+      sortOptions = { amountToRaise: -1 };
+    } else if (sort === "target-low") {
+      sortOptions = { amountToRaise: 1 };
     }
+
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.max(1, Math.min(50, parseInt(limit) || 9));
+
     const events = await Event.find(query)
       .populate("createdBy", "firstName lastName email avatar")
-      .sort({ createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .sort(sortOptions)
+      .limit(limitNum)
+      .skip((pageNum - 1) * limitNum);
+
     const total = await Event.countDocuments(query);
+
     res.json({
       events,
-      totalPages: Math.ceil(total / limit),
-      currentPage: parseInt(page),
+      totalPages: Math.ceil(total / limitNum) || 1,
+      currentPage: pageNum,
       total,
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    next(e);
   }
 };
 
-// GET /events/:id
-const getEventById = async (req, res) => {
+// GET /api/events/:id
+const getEventById = async (req, res, next) => {
   try {
     const event = await Event.findById(req.params.id).populate(
       "createdBy",
       "firstName lastName email avatar",
     );
-    if (!event) return res.status(404).json({ error: "Event not found" });
-    res.json(event);
+    if (!event) {
+      throw new NotFoundError("Campaign not found");
+    }
+    const supportersCount = await Contribution.countDocuments({
+      eventId: req.params.id,
+      status: "completed",
+    });
+    const eventObj = event.toObject ? event.toObject() : event;
+    res.json({
+      ...eventObj,
+      supportersCount,
+    });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    next(e);
   }
 };
 
-// GET /my-events
-const getMyEvents = async (req, res) => {
+// GET /api/my-events
+const getMyEvents = async (req, res, next) => {
   try {
-    const events = await Event.find({ createdBy: req.user.id })
+    const userId = req.user.id || req.user._id;
+    const events = await Event.find({ createdBy: userId })
       .populate("createdBy", "firstName lastName email avatar")
       .sort({ createdAt: -1 });
     res.json(events);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    next(e);
   }
 };
 
-// PUT /events/:id
-const updateEvent = async (req, res) => {
+// PUT /api/events/:id
+const updateEvent = async (req, res, next) => {
   try {
     const { id } = req.params;
+    const userId = (req.user.id || req.user._id).toString();
+
     const event = await Event.findById(id);
-    if (!event) return res.status(404).json({ error: "Event not found" });
-    if (event.createdBy.toString() !== req.user.id) {
-      return res
-        .status(403)
-        .json({ error: "Not authorized to update this event" });
+    if (!event) {
+      throw new NotFoundError("Campaign not found");
+    }
+
+    if (event.createdBy.toString() !== userId) {
+      throw new ForbiddenError("Not authorized to update this campaign");
     }
 
     const { title, description, amountToRaise, imageUrl } = req.body;
-    const tags = req.body.tags ? JSON.parse(req.body.tags) : event.tags;
+    let tags = event.tags;
+
+    if (req.body.tags) {
+      if (Array.isArray(req.body.tags)) {
+        tags = req.body.tags;
+      } else if (typeof req.body.tags === "string") {
+        try {
+          tags = JSON.parse(req.body.tags);
+        } catch {
+          tags = req.body.tags.split(",").map((t) => t.trim()).filter(Boolean);
+        }
+      }
+    }
 
     const updateData = {
       title: title || event.title,
       description: description || event.description,
-      amountToRaise: amountToRaise || event.amountToRaise,
+      amountToRaise: amountToRaise ? Number(amountToRaise) : event.amountToRaise,
       tags,
     };
 
-    // Handle image upload
     if (req.file) {
       try {
-        // Delete old image from Cloudinary if it exists
         if (event.imagePublicId) {
           await cloudinary.uploader.destroy(event.imagePublicId);
         }
 
-        // Upload new image to Cloudinary
         const result = await cloudinary.uploader.upload(req.file.path, {
           folder: "sahayog-events",
           resource_type: "image",
           transformation: [
-            { width: 800, height: 600, crop: "limit" },
+            { width: 1200, height: 800, crop: "limit" },
             { quality: "auto", fetch_format: "auto" },
           ],
         });
 
         updateData.imageUrl = result.secure_url;
         updateData.imagePublicId = result.public_id;
-
-        // Clean up temporary file
-        fs.unlinkSync(req.file.path);
+        cleanupTempFile(req.file.path);
       } catch (uploadError) {
-        console.error("Cloudinary upload failed:", uploadError);
-        // Clean up temporary file even if upload fails
-        if (req.file && req.file.path) {
-          try {
-            fs.unlinkSync(req.file.path);
-          } catch (cleanupError) {
-            console.error("Failed to clean up temp file:", cleanupError);
-          }
-        }
-        return res
-          .status(422)
-          .json({ error: "Image upload failed. Please try again." });
+        cleanupTempFile(req.file.path);
+        throw new ValidationError("Image upload failed. Please try again.");
       }
     } else if (imageUrl && imageUrl !== event.imageUrl) {
-      // Delete old Cloudinary image if switching to URL
       if (event.imagePublicId) {
         try {
           await cloudinary.uploader.destroy(event.imagePublicId);
-        } catch (deleteError) {
-          console.error("Failed to delete old image:", deleteError);
+        } catch (delErr) {
+          logger.warn("Failed to delete old Cloudinary image:", { error: delErr.message });
         }
       }
       updateData.imageUrl = imageUrl;
@@ -213,67 +250,74 @@ const updateEvent = async (req, res) => {
 
     const updatedEvent = await Event.findByIdAndUpdate(id, updateData, {
       new: true,
+      runValidators: true,
     }).populate("createdBy", "firstName lastName email avatar");
+
+    logger.info(`Campaign updated: "${updatedEvent.title}"`);
     res.json(updatedEvent);
   } catch (e) {
-    // Clean up temporary file if it exists
-    if (req.file && req.file.path) {
-      try {
-        fs.unlinkSync(req.file.path);
-      } catch (cleanupError) {
-        console.error("Failed to clean up temp file:", cleanupError);
-      }
-    }
-    res.status(422).json({ error: e.message });
+    if (req.file) cleanupTempFile(req.file.path);
+    next(e);
   }
 };
 
-// DELETE /events/:id
-const deleteEvent = async (req, res) => {
+// DELETE /api/events/:id
+const deleteEvent = async (req, res, next) => {
   try {
     const { id } = req.params;
+    const userId = (req.user.id || req.user._id).toString();
+
     const event = await Event.findById(id);
-    if (!event) return res.status(404).json({ error: "Event not found" });
-    if (event.createdBy.toString() !== req.user.id) {
-      return res
-        .status(403)
-        .json({ error: "Not authorized to delete this event" });
+    if (!event) {
+      throw new NotFoundError("Campaign not found");
     }
 
-    // Delete image from Cloudinary if it exists
+    if (event.createdBy.toString() !== userId) {
+      throw new ForbiddenError("Not authorized to delete this campaign");
+    }
+
     if (event.imagePublicId) {
       try {
         await cloudinary.uploader.destroy(event.imagePublicId);
       } catch (deleteError) {
-        console.error("Failed to delete image from Cloudinary:", deleteError);
-        // Continue with event deletion even if image deletion fails
+        logger.warn("Failed to delete image from Cloudinary:", { error: deleteError.message });
       }
     }
 
     await Event.findByIdAndDelete(id);
-    res.json({ message: "Event deleted successfully" });
+    logger.info(`Campaign deleted: id ${id}`);
+    res.json({ success: true, message: "Campaign deleted successfully" });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    next(e);
   }
 };
 
-// PATCH /events/:id/contribute
-const contributeToEvent = async (req, res) => {
+// PATCH /api/events/:id/contribute
+const contributeToEvent = async (req, res, next) => {
   try {
     const { amount } = req.body;
-    if (!amount || amount <= 0)
-      return res.status(400).json({ error: "Invalid contribution amount" });
+    const numericAmount = Number(amount);
+
+    if (isNaN(numericAmount) || numericAmount <= 0) {
+      throw new BadRequestError("Invalid contribution amount. Must be greater than 0.");
+    }
+
     const event = await Event.findById(req.params.id);
-    if (!event) return res.status(404).json({ error: "Event not found" });
-    event.currentAmount += Number(amount);
+    if (!event) {
+      throw new NotFoundError("Campaign not found");
+    }
+
+    event.currentAmount = (event.currentAmount || 0) + numericAmount;
     await event.save();
+
     res.json({
+      success: true,
       message: "Donation recorded successfully",
       currentAmount: event.currentAmount,
-      progress: (event.currentAmount / event.amountToRaise) * 100,
+      progress: Math.min((event.currentAmount / event.amountToRaise) * 100, 100),
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    next(e);
   }
 };
 

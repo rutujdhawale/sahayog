@@ -107,6 +107,43 @@ const EventsPage = () => {
     }).format(amount);
   };
 
+  const handleShare = async (e, event) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const shareUrl = `${window.location.origin}/contribute/${event._id}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: event.title,
+          text: `Support "${event.title}" on Sahayog!`,
+          url: shareUrl,
+        });
+        toast.success("Shared successfully!");
+        return;
+      } catch (err) {
+        if (err.name === "AbortError") {
+          return;
+        }
+      }
+    }
+
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(shareUrl);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = shareUrl;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+      toast.success("Campaign link copied to clipboard!");
+    } catch (err) {
+      toast.error("Failed to copy link");
+    }
+  };
+
   const getProgressPercentage = (current, target) => {
     return Math.min((current / target) * 100, 100);
   };
@@ -136,8 +173,13 @@ const EventsPage = () => {
             </div>
           )}
           <div className="absolute top-3 right-3">
-            <button className="bg-white/80 backdrop-blur-sm p-2 rounded-full hover:bg-white transition-colors">
-              <Share2 className="h-4 w-4 text-gray-600" />
+            <button
+              onClick={(e) => handleShare(e, event)}
+              title="Share Campaign"
+              aria-label="Share Campaign"
+              className="bg-white/80 backdrop-blur-sm p-2 rounded-full hover:bg-white hover:text-teal-600 transition-colors shadow-sm"
+            >
+              <Share2 className="h-4 w-4 text-gray-600 hover:text-teal-600" />
             </button>
           </div>
         </div>

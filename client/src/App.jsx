@@ -36,6 +36,7 @@ function App() {
           <Route path="/my-contributions" element={<MyContributionsPage />} />
           {/* --- NEW CONTRIBUTION FLOW ROUTES --- */}
           <Route path="/contribute/:eventId" element={<ContributionPage />} />
+          <Route path="/events/:id" element={<ContributionPage />} />
           <Route path="/checkout/:eventId" element={<CheckoutPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
